@@ -843,13 +843,13 @@ where
             V: MapAccess<'de>,
         {
             let mut iri = None;
-            while let Some(key) = map.next_key::<&str>()? {
-                match key {
+            while let Some(key) = map.next_key::<String>()? {
+                match key.as_str() {
                     "type" => {
-                        let value = map.next_value::<&str>()?;
-                        if value != "uri" {
+                        let value = map.next_value::<String>()?;
+                        if value.as_str() != "uri" {
                             return Err(de::Error::invalid_value(
-                                de::Unexpected::Str(value),
+                                de::Unexpected::Str(value.as_str()),
                                 &"uri",
                             ));
                         }
@@ -861,7 +861,7 @@ where
                         iri = Some(map.next_value::<String>()?);
                     }
                     _ => {
-                        return Err(de::Error::unknown_field(key, &["type", "value"]));
+                        return Err(de::Error::unknown_field(&key, &["type", "value"]));
                     }
                 }
             }
@@ -1579,6 +1579,44 @@ mod tests {
 
     #[test]
     #[cfg(feature = "serde")]
+    fn serde_from_reader() -> Result<(), serde_json::Error> {
+        let triple = Triple::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            NamedNode::new_unchecked("http://example.com/o"),
+        );
+        let jsn = serde_json::to_string(&triple)?;
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Triple = serde_json::from_reader(reader)?;
+        assert_eq!(deserialized, triple);
+
+        // Test triples with all possible combinations of terms
+        let triple = Triple::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            Literal::new_simple_literal("foo"),
+        );
+        let jsn = serde_json::to_string(&triple)?;
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Triple = serde_json::from_reader(reader)?;
+        assert_eq!(deserialized, triple);
+
+        let triple = Triple::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            BlankNode::new("foo").unwrap(),
+        );
+
+        let jsn = serde_json::to_string(&triple).unwrap();
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Triple = serde_json::from_reader(reader)?;
+        assert_eq!(deserialized, triple);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
     #[cfg(feature = "rdf-star")]
     fn serde_star() -> Result<(), serde_json::Error> {
         let triple = Triple::new(
@@ -1597,6 +1635,28 @@ mod tests {
             r#"{"subject":{"type":"uri","value":"http://example.com/s"},"predicate":{"type":"uri","value":"http://example.com/p"},"object":{"type":"triple","subject":{"type":"uri","value":"http://example.com/s"},"predicate":{"type":"uri","value":"http://example.com/p"},"object":{"type":"uri","value":"http://example.com/o"}}}"#
         );
         let deserialized: Triple = serde_json::from_str(&jsn)?;
+        assert_eq!(deserialized, triple);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    #[cfg(feature = "rdf-star")]
+    fn serde_star_from_reader() -> Result<(), serde_json::Error> {
+        let triple = Triple::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            Term::Triple(Box::new(Triple::new(
+                NamedNode::new_unchecked("http://example.com/s"),
+                NamedNode::new_unchecked("http://example.com/p"),
+                NamedNode::new_unchecked("http://example.com/o"),
+            ))),
+        );
+
+        let jsn = serde_json::to_string(&triple)?;
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Triple = serde_json::from_reader(reader)?;
         assert_eq!(deserialized, triple);
 
         Ok(())
@@ -1684,6 +1744,71 @@ mod tests {
 
     #[test]
     #[cfg(feature = "serde")]
+    fn serde_quad_from_reader() -> Result<(), serde_json::Error> {
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            NamedNode::new_unchecked("http://example.com/o"),
+            NamedNode::new_unchecked("http://example.com/g"),
+        );
+        let jsn = serde_json::to_string(&quad)?;
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Quad = serde_json::from_reader(reader)?;
+        assert_eq!(deserialized, quad);
+
+        // Test quads with all possible combinations of terms
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            Literal::new_simple_literal("foo"),
+            NamedNode::new_unchecked("http://example.com/g"),
+        );
+        let jsn = serde_json::to_string(&quad)?;
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Quad = serde_json::from_reader(reader)?;
+        assert_eq!(deserialized, quad);
+
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            BlankNode::new("foo").unwrap(),
+            NamedNode::new_unchecked("http://example.com/g"),
+        );
+
+        let jsn = serde_json::to_string(&quad).unwrap();
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Quad = serde_json::from_reader(reader)?;
+        assert_eq!(deserialized, quad);
+
+        // Test quads with blank node graph name
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            NamedNode::new_unchecked("http://example.com/o"),
+            BlankNode::new("foo").unwrap(),
+        );
+        let jsn = serde_json::to_string(&quad)?;
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Quad = serde_json::from_reader(reader)?;
+        assert_eq!(deserialized, quad);
+
+        // Test quads with default graph name
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            NamedNode::new_unchecked("http://example.com/o"),
+            GraphName::DefaultGraph,
+        );
+        let jsn = serde_json::to_string(&quad)?;
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Quad = serde_json::from_reader(reader)?;
+        assert_eq!(deserialized, quad);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
     #[cfg(feature = "rdf-star")]
     fn serde_quad_star() -> Result<(), serde_json::Error> {
         let quad = Quad::new(
@@ -1710,11 +1835,44 @@ mod tests {
 
     #[test]
     #[cfg(feature = "serde")]
+    #[cfg(feature = "rdf-star")]
+    fn serde_quad_star_from_reader() -> Result<(), serde_json::Error> {
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            Term::Triple(Box::new(Triple::new(
+                NamedNode::new_unchecked("http://example.com/s"),
+                NamedNode::new_unchecked("http://example.com/p"),
+                NamedNode::new_unchecked("http://example.com/o"),
+            ))),
+            NamedNode::new_unchecked("http://example.com/g"),
+        );
+
+        let jsn = serde_json::to_string(&quad)?;
+        let reader = std::io::Cursor::new(jsn.as_bytes());
+        let deserialized: Quad = serde_json::from_reader(reader)?;
+        assert_eq!(deserialized, quad);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
     fn test_serde_term() {
         let b: Term = BlankNode::new("foo").unwrap().into();
         let json = serde_json::to_string(&b).unwrap();
         assert_eq!(json, "{\"type\":\"bnode\",\"value\":\"foo\"}");
         let b2: Term = serde_json::from_str(&json).unwrap();
+        assert_eq!(b2, Term::BlankNode(BlankNode::new("foo").unwrap()));
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_serde_term_from_reader() {
+        let b: Term = BlankNode::new("foo").unwrap().into();
+        let json = serde_json::to_string(&b).unwrap();
+        let reader = std::io::Cursor::new(json.as_bytes());
+        let b2: Term = serde_json::from_reader(reader).unwrap();
         assert_eq!(b2, Term::BlankNode(BlankNode::new("foo").unwrap()));
     }
 

@@ -148,15 +148,15 @@ impl<'de> Visitor<'de> for BlankNodeVisitor {
     where
         V: MapAccess<'de>,
     {
-        let key = map.next_key::<&str>()?;
-        if key != Some("value") {
+        let key = map.next_key::<String>()?;
+        if key != Some("value".to_string()) {
             if let Some(val) = key {
-                return Err(de::Error::unknown_field(val, &["value"]));
+                return Err(de::Error::unknown_field(&val, &["value"]));
             }
             return Err(de::Error::missing_field("value"));
         }
         if cfg!(not(feature = "serde-unvalidated")) {
-            Ok(BlankNode::new(map.next_value::<&str>()?).map_err(de::Error::custom)?)
+            Ok(BlankNode::new(map.next_value::<String>()?).map_err(de::Error::custom)?)
         } else {
             Ok(BlankNode::new_unchecked(map.next_value::<String>()?))
         }
@@ -503,6 +503,25 @@ mod tests {
         assert!(b4.is_err());
     }
 
+    #[test]
+    #[cfg(feature = "serde")]
+    fn as_str_partial_reader() {
+        let j = serde_json::to_string(&BlankNode::new("abc").unwrap()).unwrap();
+        let reader = std::io::Cursor::new(j.into_bytes());
+
+        let mut de = serde_json::Deserializer::from_reader(reader);
+        let deserialized = BlankNode::deserialize(&mut de);
+
+        if let Err(e) = deserialized {
+            panic!("{}", e);
+        }
+
+        assert!(deserialized.is_ok());
+        assert_eq!(
+            deserialized.unwrap(),
+            BlankNode::new("abc").unwrap()
+        );
+    }
 
     // This helper function will only compile if T implements DeserializeOwned.
     #[cfg(feature = "serde")]
