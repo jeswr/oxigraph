@@ -1023,10 +1023,15 @@ impl<'a> From<TripleRef<'a>> for Triple {
 ///
 /// It is the union of [IRIs](https://www.w3.org/TR/rdf11-concepts/#dfn-iri), [blank nodes](https://www.w3.org/TR/rdf11-concepts/#dfn-blank-node), and the [default graph name](https://www.w3.org/TR/rdf11-concepts/#dfn-default-graph).
 #[derive(Eq, PartialEq, Debug, Clone, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "lowercase"))]
 pub enum GraphName {
+    #[cfg_attr(feature = "serde", serde(rename = "uri"))]
     NamedNode(NamedNode),
+    #[cfg_attr(feature = "serde", serde(rename = "bnode"))]
     BlankNode(BlankNode),
     #[default]
+    #[cfg_attr(feature = "serde", serde(rename = "default"))]
     DefaultGraph,
 }
 
@@ -1233,17 +1238,32 @@ impl<'a> From<GraphNameRef<'a>> for GraphName {
 /// # Result::<_,oxrdf::IriParseError>::Ok(())
 /// ```
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Quad {
     /// The [subject](https://www.w3.org/TR/rdf11-concepts/#dfn-subject) of this triple.
     pub subject: Subject,
 
     /// The [predicate](https://www.w3.org/TR/rdf11-concepts/#dfn-predicate) of this triple.
+    ///     #[cfg_attr(
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "serialize_predicate",
+            deserialize_with = "deserialize_predicate"
+        )
+    )]
     pub predicate: NamedNode,
 
     /// The [object](https://www.w3.org/TR/rdf11-concepts/#dfn-object) of this triple.
     pub object: Term,
 
     /// The name of the RDF [graph](https://www.w3.org/TR/rdf11-concepts/#dfn-rdf-graph) in which the triple is.
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            rename = "graph",
+        )
+    )]
     pub graph_name: GraphName,
 }
 
@@ -1584,6 +1604,112 @@ mod tests {
 
     #[test]
     #[cfg(feature = "serde")]
+    fn serde_quad() -> Result<(), serde_json::Error> {
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            NamedNode::new_unchecked("http://example.com/o"),
+            NamedNode::new_unchecked("http://example.com/g"),
+        );
+        let jsn = serde_json::to_string(&quad)?;
+        assert_eq!(
+            jsn,
+            r#"{"subject":{"type":"uri","value":"http://example.com/s"},"predicate":{"type":"uri","value":"http://example.com/p"},"object":{"type":"uri","value":"http://example.com/o"},"graph":{"type":"uri","value":"http://example.com/g"}}"#
+        );
+        let deserialized: Quad = serde_json::from_str(&jsn)?;
+        assert_eq!(deserialized, quad);
+
+        // Test quads with all possible combinations of terms
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            Literal::new_simple_literal("foo"),
+            NamedNode::new_unchecked("http://example.com/g"),
+        );
+        let jsn = serde_json::to_string(&quad)?;
+        assert_eq!(
+            jsn,
+            r#"{"subject":{"type":"uri","value":"http://example.com/s"},"predicate":{"type":"uri","value":"http://example.com/p"},"object":{"type":"literal","value":"foo"},"graph":{"type":"uri","value":"http://example.com/g"}}"#
+        );
+        let deserialized: Quad = serde_json::from_str(&jsn)?;
+        assert_eq!(deserialized, quad);
+
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            BlankNode::new("foo").unwrap(),
+            NamedNode::new_unchecked("http://example.com/g"),
+        );
+
+        let jsn = serde_json::to_string(&quad).unwrap();
+        assert_eq!(
+            jsn,
+            r#"{"subject":{"type":"uri","value":"http://example.com/s"},"predicate":{"type":"uri","value":"http://example.com/p"},"object":{"type":"bnode","value":"foo"},"graph":{"type":"uri","value":"http://example.com/g"}}"#
+        );
+        let deserialized: Quad = serde_json::from_str(&jsn)?;
+        assert_eq!(deserialized, quad);
+
+        // Test quads with blank node graph name
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            NamedNode::new_unchecked("http://example.com/o"),
+            BlankNode::new("foo").unwrap(),
+        );
+        let jsn = serde_json::to_string(&quad)?;
+        assert_eq!(
+            jsn,
+            r#"{"subject":{"type":"uri","value":"http://example.com/s"},"predicate":{"type":"uri","value":"http://example.com/p"},"object":{"type":"uri","value":"http://example.com/o"},"graph":{"type":"bnode","value":"foo"}}"#
+        );
+        let deserialized: Quad = serde_json::from_str(&jsn)?;
+        assert_eq!(deserialized, quad);
+
+        // Test quads with default graph name
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            NamedNode::new_unchecked("http://example.com/o"),
+            GraphName::DefaultGraph,
+        );
+        let jsn = serde_json::to_string(&quad)?;
+        assert_eq!(
+            jsn,
+            r#"{"subject":{"type":"uri","value":"http://example.com/s"},"predicate":{"type":"uri","value":"http://example.com/p"},"object":{"type":"uri","value":"http://example.com/o"},"graph":{"type":"default"}}"#
+        );
+        let deserialized: Quad = serde_json::from_str(&jsn)?;
+        assert_eq!(deserialized, quad);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    #[cfg(feature = "rdf-star")]
+    fn serde_quad_star() -> Result<(), serde_json::Error> {
+        let quad = Quad::new(
+            NamedNode::new_unchecked("http://example.com/s"),
+            NamedNode::new_unchecked("http://example.com/p"),
+            Term::Triple(Box::new(Triple::new(
+                NamedNode::new_unchecked("http://example.com/s"),
+                NamedNode::new_unchecked("http://example.com/p"),
+                NamedNode::new_unchecked("http://example.com/o"),
+            ))),
+            NamedNode::new_unchecked("http://example.com/g"),
+        );
+
+        let jsn = serde_json::to_string(&quad)?;
+        assert_eq!(
+            jsn,
+            r#"{"subject":{"type":"uri","value":"http://example.com/s"},"predicate":{"type":"uri","value":"http://example.com/p"},"object":{"type":"triple","subject":{"type":"uri","value":"http://example.com/s"},"predicate":{"type":"uri","value":"http://example.com/p"},"object":{"type":"uri","value":"http://example.com/o"}},"graph":{"type":"uri","value":"http://example.com/g"}}"#
+        );
+        let deserialized: Quad = serde_json::from_str(&jsn)?;
+        assert_eq!(deserialized, quad);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
     fn test_serde_term() {
         let b: Term = BlankNode::new("foo").unwrap().into();
         let json = serde_json::to_string(&b).unwrap();
@@ -1601,7 +1727,7 @@ mod tests {
     fn test_term_deserialize_owned() {
         // If Term does not implement DeserializeOwned, this call will fail to compile.
         assert_deserialize_owned::<Term>();
-        #[cfg(feature = "rdf-star")]
         assert_deserialize_owned::<Triple>();
+        assert_deserialize_owned::<Quad>();
     }
 }
