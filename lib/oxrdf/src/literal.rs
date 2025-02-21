@@ -704,6 +704,8 @@ pub fn print_quoted_str(string: &str, f: &mut impl Write) -> fmt::Result {
 #[allow(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
+    #[cfg(feature = "serde")]
+    use serde::de::DeserializeOwned;
 
     #[test]
     fn test_simple_literal_equality() {
@@ -780,5 +782,16 @@ mod tests {
         } else {
             assert!(deserialized.is_err());
         }
+    }
+
+    // This helper function will only compile if T implements DeserializeOwned.
+    #[cfg(feature = "serde")]
+    fn assert_deserialize_owned<T: DeserializeOwned>() {}
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_literal_deserialize_owned() {
+        // If Literal does not implement DeserializeOwned, this call will fail to compile.
+        assert_deserialize_owned::<Literal>();
     }
 }

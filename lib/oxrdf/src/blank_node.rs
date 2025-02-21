@@ -410,6 +410,8 @@ mod tests {
     use super::*;
     #[cfg(feature = "serde")]
     use serde_json;
+    #[cfg(feature = "serde")]
+    use serde::de::DeserializeOwned;
     #[cfg(not(target_family = "wasm"))]
     use std::mem::{align_of, size_of};
 
@@ -499,5 +501,17 @@ mod tests {
         let b4: Result<BlankNode, serde_json::Error> =
             serde_json::from_str::<BlankNode>(&"{\"art\":\"r\"}");
         assert!(b4.is_err());
+    }
+
+
+    // This helper function will only compile if T implements DeserializeOwned.
+    #[cfg(feature = "serde")]
+    fn assert_deserialize_owned<T: DeserializeOwned>() {}
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_blank_node_deserialize_owned() {
+        // If BlankNode does not implement DeserializeOwned, this call will fail to compile.
+        assert_deserialize_owned::<BlankNode>();
     }
 }

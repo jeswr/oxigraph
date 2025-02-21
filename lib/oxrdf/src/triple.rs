@@ -1416,6 +1416,8 @@ mod tests {
 
     #[cfg(feature = "serde")]
     use serde_json::json;
+    #[cfg(feature = "serde")]
+    use serde::de::DeserializeOwned;
 
     #[test]
     fn triple_from_terms() -> Result<(), TryFromTermError> {
@@ -1588,5 +1590,18 @@ mod tests {
         assert_eq!(json, "{\"type\":\"bnode\",\"value\":\"foo\"}");
         let b2: Term = serde_json::from_str(&json).unwrap();
         assert_eq!(b2, Term::BlankNode(BlankNode::new("foo").unwrap()));
+    }
+
+    // This helper function will only compile if T implements DeserializeOwned.
+    #[cfg(feature = "serde")]
+    fn assert_deserialize_owned<T: DeserializeOwned>() {}
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_term_deserialize_owned() {
+        // If Term does not implement DeserializeOwned, this call will fail to compile.
+        assert_deserialize_owned::<Term>();
+        #[cfg(feature = "rdf-star")]
+        assert_deserialize_owned::<Triple>();
     }
 }
